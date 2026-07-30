@@ -8,15 +8,12 @@
 """
 
 import html as H
-import json
-import os
 import re
 import sys
-import time
-import urllib.error
-import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
+
+from common import JST, http_get, line_push, load_state, save_state
 
 URL = "https://eplus.jp/sf/detail/0473460001"
 
@@ -32,35 +29,10 @@ AVAILABLE = {"受付中", "残りわずか", "空席あり"}
 PARSE_FAIL_ALERT_AT = 3
 
 STATE_PATH = Path(__file__).with_name("state.json")
-JST = timezone(timedelta(hours=9))
-UA = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-)
 
 
 def strip_tags(s: str) -> str:
     return H.unescape(re.sub(r"<[^>]+>", "", s)).strip()
-
-
-def fetch(url: str, tries: int = 3) -> str:
-    last = None
-    for attempt in range(tries):
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={
-                    "User-Agent": UA,
-                    "Accept-Language": "ja,en;q=0.8",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=30) as r:
-                return r.read().decode("utf-8", errors="replace")
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
-            last = e
-            if attempt < tries - 1:
-                time.sleep(5 * (attempt + 1))
-    raise RuntimeError(f"ページ取得に失敗: {last}")
 
 
 def extract_article(page: str, key: str) -> str | None:
@@ -72,7 +44,7 @@ def extract_article(page: str, key: str) -> str | None:
     marks.append(len(page))
     for i in range(len(marks) - 1):
         block = page[marks[i] : marks[i + 1]]
-        if f'block-ticket-article {key} ' in block:
+        if f"block-ticket-article {key} " in block:
             return block
     return None
 
@@ -98,63 +70,12 @@ def purchase_url(block: str) -> str:
     return m.group(1) if m else URL
 
 
-def line_push(text: str) -> None:
-    token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "").strip()
-    if not token:
-        print("[warn] LINE_CHANNEL_ACCESS_TOKEN 未設定。通知本文を出力するだけにします:\n" + text)
-        return
-    body = json.dumps(
-        {"messages": [{"type": "text", "text": text[:4900]}]}, ensure_ascii=False
-    ).encode("utf-8")
-    req = urllib.request.Request(
-        "https://api.line.me/v2/bot/message/broadcast",
-        data=body,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {token}",
-        },
-        method="POST",
-    )
-    last = None
-    for attempt in range(3):
-        try:
-            with urllib.request.urlopen(req, timeout=30) as r:
-                print(f"[line] sent, http {r.status}")
-                return
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", errors="replace")
-            last = f"HTTP {e.code}: {detail}"
-            # 4xx は再試行しても直らない
-            if 400 <= e.code < 500:
-                break
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
-            last = str(e)
-        if attempt < 2:
-            time.sleep(5 * (attempt + 1))
-    raise RuntimeError(f"LINE 送信に失敗: {last}")
-
-
-def load_state() -> dict:
-    if STATE_PATH.exists():
-        try:
-            return json.loads(STATE_PATH.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            pass
-    return {"receipts": {}, "parse_failures": 0}
-
-
-def save_state(state: dict) -> None:
-    STATE_PATH.write_text(
-        json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
-
-
 def main() -> int:
     now = datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
-    state = load_state()
+    state = load_state(STATE_PATH)
     prev: dict[str, str] = state.get("receipts", {})
 
-    page = fetch(URL)
+    page = http_get(URL)
     block = extract_article(page, TARGET_KEY)
     current = parse_receipts(block) if block else {}
 
@@ -162,7 +83,7 @@ def main() -> int:
         # ページ構造が変わった / 公演が消えた。無言で見逃さないよう失敗させる。
         fails = state.get("parse_failures", 0) + 1
         state["parse_failures"] = fails
-        save_state(state)
+        save_state(STATE_PATH, state)
         msg = (
             f"⚠️ チケット監視が対象公演を読み取れませんでした（{fails}回連続）\n"
             f"{TARGET_LABEL}\n"
@@ -211,7 +132,7 @@ def main() -> int:
         print("  → 変化なし（通知しません）")
 
     state["receipts"] = current
-    save_state(state)
+    save_state(STATE_PATH, state)
     return 0
 
 
