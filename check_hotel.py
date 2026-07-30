@@ -20,13 +20,14 @@ from common import JST, http_get, line_push, load_state, save_state
 
 # ---- 監視条件 -------------------------------------------------------------
 AREA_ID = 439
-AREA_LABEL = "【テスト送信】仙台"
-CHECKIN = "2026-09-09"  # 泊まる日（JST）
+AREA_LABEL = "仙台"
+CHECKIN = "2026-10-03"  # 泊まる日（JST）
 NIGHTS = 1
 SMOKING = "all"  # all / no_smoking / smoking
 
 # 監視する人数・室数の組み合わせ。増やせばその条件も一緒に見る。
 SEARCHES = [
+    {"people": 1, "rooms": 1},
     {"people": 2, "rooms": 1},
 ]
 
