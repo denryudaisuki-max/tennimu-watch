@@ -1,0 +1,44 @@
+name: チケット監視
+
+on:
+  schedule:
+    # 5分ごと（GitHub Actions の最短間隔）。負荷状況により数分〜十数分遅れることがある。
+    - cron: "*/5 * * * *"
+  workflow_dispatch: # 手動実行（動作確認用）
+
+# 前の実行が終わっていなければスキップする
+concurrency:
+  group: ticket-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: write # state.json を書き戻すため
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 空席チェック
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+        run: python check.py
+
+      - name: 状態を保存
+        if: always() # チェックが失敗しても失敗回数は記録する
+        run: |
+          if [[ -n "$(git status --porcelain state.json)" ]]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state.json
+            git commit -m "状態更新: $(date -u '+%Y-%m-%d %H:%M UTC')"
+            git push
+          else
+            echo "変化なし"
+          fi
