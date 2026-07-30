@@ -17,8 +17,8 @@ from common import JST, http_get, line_push, load_state, save_state
 
 # ---- 監視条件 -------------------------------------------------------------
 AREA_ID = 439
-AREA_LABEL = "【テスト送信】仙台"
-CHECKIN = "2026-09-09"  # 泊まる日（JST）
+AREA_LABEL = "仙台"
+CHECKIN = "2026-10-03"  # 泊まる日（JST）
 NIGHTS = 1
 PEOPLE = 1
 ROOMS = 1
