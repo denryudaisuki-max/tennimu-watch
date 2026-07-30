@@ -22,8 +22,8 @@ URL = "https://eplus.jp/sf/detail/0473460001"
 
 # 監視対象。ページ内 <article class="block-ticket-article {KEY} local-.. ..."> のキー。
 # 20260830-開演-1730-13 = 2026/8/30(日) 17:30開演 (東京都)
-TARGET_KEY = "20260830-開演-1730-13"
-TARGET_LABEL = "2026/8/30(日) 17:30開演　TACHIKAWA STAGE GARDEN"
+TARGET_KEY = "20260830-開演-1200-13"
+TARGET_LABEL = "【テスト送信】2026/8/30(日) 12:00開演　TACHIKAWA STAGE GARDEN"
 
 # このステータスなら「買える」とみなす
 AVAILABLE = {"受付中", "残りわずか", "空席あり"}
