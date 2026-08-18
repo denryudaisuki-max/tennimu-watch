@@ -36,17 +36,23 @@ def strip_tags(s: str) -> str:
 
 
 def extract_article(page: str, key: str) -> str | None:
-    """対象公演の <article> ブロックだけを切り出す。"""
+    """対象公演の <article> ブロックを結合して返す。
+
+    1公演につき <article> は2つある（終了した受付のまとまりと、現在の受付の
+    まとまり）。先頭の1つだけを見ると当日引換券やキャンセル待ち券を取りこぼす
+    ので、同じキーのブロックはすべて連結する。
+    """
     marks = [
         m.start()
         for m in re.finditer(r'<article class="block-ticket-article \d{8}-', page)
     ]
     marks.append(len(page))
-    for i in range(len(marks) - 1):
-        block = page[marks[i] : marks[i + 1]]
-        if f"block-ticket-article {key} " in block:
-            return block
-    return None
+    blocks = [
+        page[marks[i] : marks[i + 1]]
+        for i in range(len(marks) - 1)
+        if f"block-ticket-article {key} " in page[marks[i] : marks[i + 1]]
+    ]
+    return "".join(blocks) if blocks else None
 
 
 def parse_receipts(block: str) -> dict[str, str]:
