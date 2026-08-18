@@ -1,12 +1,16 @@
 name: チケット監視
 
 on:
+  # GitHub の cron は大幅に間引かれる（実測7%）ため、これは「確認のきっかけ」ではなく
+  # 「ループが途切れたときに再開させるためのトリガー」として使う。実際の確認間隔は
+  # watch_loop.sh の中のタイマーが決める。
   schedule:
-    # 5分ごと（GitHub Actions の最短間隔）。負荷状況により数分〜十数分遅れることがある。
     - cron: "*/5 * * * *"
-  workflow_dispatch: # 手動実行（動作確認用）
+  workflow_dispatch: # 手動で起動し直す用
 
-# 前の実行が終わっていなければスキップする
+# 走っているループが1本だけになるようにする。
+# ループ中に届いた起動要求は「待機中」として1件だけ保持され、
+# ループが終わった瞬間に次のループが始まる（これで切れ目なく続く）。
 concurrency:
   group: ticket-watch
   cancel-in-progress: false
@@ -17,7 +21,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
     steps:
       - uses: actions/checkout@v4
 
@@ -25,26 +29,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: チケット空席チェック
+      - name: 監視ループ
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-        run: python check.py
-
-      - name: ホテル空室チェック
-        if: always() # チケット側が失敗してもこちらは動かす
-        env:
-          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-        run: python check_hotel.py
-
-      - name: 状態を保存
-        if: always() # チェックが失敗しても失敗回数は記録する
-        run: |
-          if [[ -n "$(git status --porcelain state.json state_hotel.json)" ]]; then
-            git config user.name  "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add state.json state_hotel.json
-            git commit -m "状態更新: $(date -u '+%Y-%m-%d %H:%M UTC')"
-            git push
-          else
-            echo "変化なし"
-          fi
+          INTERVAL_SECONDS: "300" # 5分ごとに確認
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
