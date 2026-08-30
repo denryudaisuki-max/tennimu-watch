@@ -1,0 +1,73 @@
+name: 通知テスト（ルートイン）
+
+# LINE のトークンは GitHub Secrets にしか無いため、通知の確認はここで行う。
+# 空きのある日付を指定して1回だけ実行し、LINE が届くかを確かめる。
+# 監視ループとは concurrency グループが別なので、走っているループを止めずに使える。
+
+on:
+  workflow_dispatch:
+    inputs:
+      checkin:
+        description: "チェックイン日 YYYY-MM-DD（空室のある日を入れる）"
+        required: true
+      nights:
+        description: "泊数"
+        required: false
+        default: "2"
+
+# 監視ループ（group: ticket-watch）とは別。待たされずにすぐ走る。
+concurrency:
+  group: notify-test
+  cancel-in-progress: true
+
+permissions:
+  contents: read # テストなので state は書き戻さない
+
+jobs:
+  notify-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 指定日で1回だけ実行して LINE に送る
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          TEST_CHECKIN: ${{ inputs.checkin }}
+          TEST_NIGHTS: ${{ inputs.nights }}
+        run: |
+          python - <<'PY'
+          import datetime
+          import os
+          import pathlib
+
+          import check_routeinn as c
+
+          checkin = datetime.date.fromisoformat(os.environ["TEST_CHECKIN"])
+          nights = int(os.environ["TEST_NIGHTS"])
+
+          # 本番のファイルには触らず、この実行の中だけ日付を差し替える。
+          c.CHECKIN = checkin.isoformat()
+          c.CHECKOUT = (checkin + datetime.timedelta(days=nights)).isoformat()
+
+          # 使い捨ての状態ファイル。前回値が無い＝必ず「変化した」と判定されるので、
+          # 空室さえあれば確実に通知が飛ぶ。コミットもしない。
+          c.STATE_PATH = pathlib.Path("state_notify_test.json")
+          c.STATE_PATH.unlink(missing_ok=True)
+
+          print(f"[テスト] {c.CHECKIN} 〜 {c.CHECKOUT} で通知を試します")
+          code = c.main()
+          if code != 0:
+              raise SystemExit(code)
+          PY
+
+      - name: 結果の見かた
+        if: always()
+        run: |
+          echo "「--- 通知 ---」と [line] sent が出ていれば LINE に届いています。"
+          echo "「空室なし」で終わった場合は、指定日に空きが無かっただけです。"
+          echo "別の日付で試してください（本番の監視には一切影響しません）。"

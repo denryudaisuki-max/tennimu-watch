@@ -168,8 +168,22 @@ https://www.toyoko-inn.com/search/result/?area=429&people=1&room=1&smoking=all&s
 
 **Actions タブ → 「空室監視」→ Run workflow** で手動実行できます。
 
-通知そのものを試したいときは、`MAX_PRICE` を一時的に大きくするか `CHECKIN` を空室のある日付に
-変えて実行すると LINE が飛びます。確認後は必ず戻してください。
+### 通知テスト
+
+ルートイン側は専用のワークフローがあります。**Actions タブ →「通知テスト（ルートイン）」→
+Run workflow** で、空室のある日付を入れて実行すると LINE が届きます。
+
+```bash
+gh workflow run "通知テスト（ルートイン）" --repo denryudaisuki-max/tennimu-watch \
+  -f checkin=2026-09-06 -f nights=2
+```
+
+本番ファイルは書き換えないので**戻す作業が要りません**。監視ループとは `concurrency`
+グループが別なので、ループを走らせたまま試せます。状態ファイルも使い捨てで、
+毎回「前回値なし」から始まるため空室さえあれば必ず通知が飛びます。
+
+東横イン側は専用ワークフローがないので、`MAX_PRICE` を一時的に大きくするか `CHECKIN` を
+空室のある日付に変えて実行してください。こちらは確認後に必ず戻してください。
 
 ## 注意点
 

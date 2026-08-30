@@ -106,9 +106,15 @@ cat <<EOS
   稼働状況             gh run list --repo $REPO --limit 5
   手動起動             gh workflow run "空室監視" --repo $REPO
   ループ停止           gh run cancel <run番号> --repo $REPO
-  通知テスト           check_hotel.py の MAX_PRICE を一時的に 30000 にする、
-                       または check_routeinn.py の日付を空きのある日にして実行
-                       （確認後は必ず戻す）
+  通知テスト（ルートイン）
+                       gh workflow run "通知テスト（ルートイン）" --repo $REPO \\
+                         -f checkin=YYYY-MM-DD -f nights=2
+                       空きのある日を指定すると LINE が届く。本番の監視ループとは
+                       concurrency グループが別なので、走らせたまま試せる。
+                       本番ファイルは書き換えないので、戻す作業も要らない。
+  通知テスト（東横イン）
+                       check_hotel.py の MAX_PRICE を一時的に 30000 にして実行
+                       （確認後は必ず戻すこと）
   ループを試す         引き継ぎ事項7を読むこと。本番に push するので
                        使い捨てのコピーを作ってから回す
 EOS
