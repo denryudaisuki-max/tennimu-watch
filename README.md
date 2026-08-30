@@ -143,6 +143,7 @@ https://www.toyoko-inn.com/search/result/?area=429&people=1&room=1&smoking=all&s
 | `state_hotel.json` | 前回の状態（連投防止用・自動更新） |
 | `watch_loop.sh` | 5分ごとに確認し続けるループ本体 |
 | `.github/workflows/watch.yml` | ループの起動と再開 |
+| `handoff.sh` | 新しいセッションへの引き継ぎ。`bash handoff.sh` で現状が一望できる |
 
 ## 終わったら
 
