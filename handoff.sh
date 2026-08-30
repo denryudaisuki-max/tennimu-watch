@@ -12,11 +12,13 @@ line() { printf '\n\033[1m%s\033[0m\n' "$1"; printf '%.0s─' {1..70}; echo; }
 
 line "■ これは何か"
 cat <<'EOS'
-ホテルの空室を5分ごとに監視し、条件を満たしたら LINE に通知する仕組み。
+ホテルの空室とチケットの復活を5分ごとに監視し、条件を満たしたら LINE に通知する仕組み。
 GitHub Actions 上で動いているので、Mac は閉じていてよい。
-いま監視しているのは2件（それぞれ独立。片方が落ちても他方は動く）:
+いま監視しているのは3件（それぞれ独立。1つ落ちても残りは動く）:
   ① 東横イン札幌 4館      2026-10-17〜10-19（2泊）滞在合計 ¥19,000 未満のとき
   ② ホテルルートイン土岐  2026-10-30〜11-01（2泊）空室が出たら（金額条件なし）
+  ③ テニミュ The Final Stage  2026-11-15(日)17:30 が「予定枚数終了→受付中」に
+                              変わったら（＝復活したら）
 詳細はすべて README.md に書いてある。まずそれを読むこと。
 EOS
 
@@ -39,10 +41,16 @@ line "■ 監視条件② ルートイン（check_routeinn.py より）"
 grep -E '^(HOTEL_NAME|HOTEL_CODE|HOTEL_ID|CHECKIN|CHECKOUT|MAX_PRICE) *=' check_routeinn.py | sed 's/^/  /'
 echo "  SEARCHES:"; sed -n '/^SEARCHES = \[/,/^\]/p' check_routeinn.py | sed 's/^/    /'
 
-line "■ 今の在庫（実際に API を叩いて確認）"
+line "■ 監視条件③ テニミュ（check_tennimu.py より）"
+grep -E '^(EVENT_NAME|EVENT_URL) *=' check_tennimu.py | sed 's/^/  /'
+echo "  TARGETS:"; sed -n '/^TARGETS = \[/,/^\]/p' check_tennimu.py | sed 's/^/    /'
+
+line "■ 今の状況（実際に取りにいって確認）"
 "$PY" check_hotel.py 2>&1 | sed 's/^/  /' || echo "  （実行に失敗）"
 echo
 "$PY" check_routeinn.py 2>&1 | sed 's/^/  /' || echo "  （実行に失敗）"
+echo
+"$PY" check_tennimu.py 2>&1 | sed 's/^/  /' || echo "  （実行に失敗）"
 echo
 echo "  ※ここで state_*.json が更新される。通知は飛ばない（条件を満たしたときのみ）"
 
@@ -79,10 +87,22 @@ cat <<'EOS'
        gh run cancel <走っているrun> --repo denryudaisuki-max/tennimu-watch
        gh workflow run "空室監視" --repo denryudaisuki-max/tennimu-watch
 
-  5. 過去にテニミュのチケット監視もやっていたが、公演終了により削除済み。
-     イープラスの申込ページ（席種別の在庫が見える唯一の場所）は
-     Akamai と飛込防止（/sf/dvcjudge の DVC_UNIQUE_ID）で自動取得できない。
-     公開ページは「受付」単位までしか分からない。この件は決着済み。
+  5. イープラスは「どこまで取れるか」で話が分かれる。ここを混同しないこと。
+     以前「イープラスは自動取得できない」と書いてあったが、それは後者の話。
+
+     ・公開の公演詳細ページ /sf/detail/xxxxxxxxx → 普通に GET できる。
+       公演ごとの「受付中／予定枚数終了／受付終了」まで読める。
+       2026-08-31 に GitHub Actions の IP からも取得できることを確認済み。
+       いま check_tennimu.py がこれで 11/15(日)17:30 の復活を見ている。
+     ・申込ページ（席種別の在庫が見える唯一の場所）→ 今も取れない。
+       Akamai と飛込防止（/sf/dvcjudge の DVC_UNIQUE_ID）に阻まれる。
+
+     つまり「その公演が買える状態になったか」は分かるが、
+     「どの席種が何枚残っているか」は分からない。
+     前者で足りる用途なら作れる。後者が要るなら手動で見るしかない。
+
+     なお ticket-status__item--accepting というクラス名は「予定枚数終了」にも
+     付いている。クラスで判定してはいけない。必ずテキストで見ること。
 
   6. ルートイン（tripla API）で詰まったら、まずこの4点を疑う。全部実測で判明した。
      ・App-Version: tripla-booking-widget/1.0 ヘッダが無いと
@@ -103,6 +123,11 @@ line "■ よく使う操作"
 cat <<EOS
   1回だけ確認          python3 check_hotel.py
                        python3 check_routeinn.py
+                       python3 check_tennimu.py
+  Actions上で1回試す    gh workflow run "1回だけ実行（手動）" --repo $REPO \\
+                         -f script=check_tennimu.py -f notify=false
+                       疎通確認用。「手元では取れるが GitHub からは弾かれる」を
+                       見つけられる。ループは止まらない。
   稼働状況             gh run list --repo $REPO --limit 5
   手動起動             gh workflow run "空室監視" --repo $REPO
   ループ停止           gh run cancel <run番号> --repo $REPO
@@ -121,7 +146,7 @@ EOS
 
 line "■ 新しいセッションでの最初の一言（コピペ用）"
 cat <<EOS
-  ホテルの空室監視（東横イン札幌／ルートイン土岐）をやっています。
+  空室とチケットの監視（東横イン札幌／ルートイン土岐／テニミュ）をやっています。
   $(pwd) にコードがあります。
   bash handoff.sh を実行して現状を把握してください。
 EOS
