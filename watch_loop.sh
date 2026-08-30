@@ -23,10 +23,10 @@ git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
 save_state() {
-  if [[ -z "$(git status --porcelain state.json state_hotel.json)" ]]; then
+  if [[ -z "$(git status --porcelain state_hotel.json)" ]]; then
     return
   fi
-  git add state.json state_hotel.json
+  git add state_hotel.json
   git commit -q -m "状態更新: $(date -u '+%Y-%m-%d %H:%M UTC')"
   git pull -q --rebase origin main 2>/dev/null || true
   git push -q origin HEAD:main 2>/dev/null || echo "[warn] push に失敗。次の変化時にまとめて反映されます"
@@ -38,9 +38,7 @@ while (( SECONDS - start < RUN_FOR )); do
   n=$((n + 1))
   echo "───── チェック #${n}　$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S JST') ─────"
 
-  # どちらかが落ちても、もう片方とループ自体は続ける。
-  # 3回連続で失敗した場合は各スクリプトが LINE に警告を出す。
-  "$PYTHON" check.py || echo "[warn] チケット監視が失敗しました"
+  # 3回連続で失敗した場合はスクリプト側が LINE に警告を出す
   "$PYTHON" check_hotel.py || echo "[warn] ホテル監視が失敗しました"
 
   save_state
