@@ -1,7 +1,9 @@
-# 東横インの空室監視 → LINE通知
+# ホテルの空室監視 → LINE通知
 
 GitHub Actions で5分ごとにチェックし、**条件に合う部屋が出たら LINE に通知**します。
-PC は閉じていて構いません。
+PC は閉じていて構いません。現在2件を並行して監視しています。
+
+### ① 東横イン札幌（`check_hotel.py`）
 
 | 項目 | 条件 |
 |---|---|
@@ -10,9 +12,20 @@ PC は閉じていて構いません。
 | 人数 | 1名1室 |
 | 予算 | **滞在合計 ¥19,000 未満** |
 
-「条件を満たさない → 満たす」に変わった瞬間だけ通知します。同じ状態が続く間は再通知しません。
+### ② ホテルルートイン土岐（`check_routeinn.py`）
 
-## 何を見ているか
+| 項目 | 条件 |
+|---|---|
+| ホテル | ホテルルートイン土岐（1館） |
+| 日程 | 2026/10/30 IN 〜 2026/11/01 OUT（2泊） |
+| 人数 | 大人1名 |
+| 予算 | **なし**（空室が出れば金額を問わず通知） |
+
+どちらも「条件を満たさない → 満たす」に変わった瞬間だけ通知します。
+同じ状態が続く間は再通知しません。2つは独立していて、片方が落ちても
+もう片方は動き続けます。
+
+## 東横イン側が何を見ているか
 
 HTML ではなく、予約サイトが内部で使っている **tRPC の JSON API** を直接叩きます。
 認証不要で、ホテルごとに空室有無と最安値が返るため、HTMLパースより安定しています。
@@ -63,6 +76,40 @@ API が返す `lowestPrice` は滞在の合計金額です。実測で確認し�
 ・東横INN札幌駅北口　¥18,400（2泊合計）
 　https://www.toyoko-inn.com/search/detail/00066/?people=1&...
 ```
+
+## ルートイン側が何を見ているか
+
+ルートインの予約は **tripla** という予約SaaS で動いており、東横インとは別系統です。
+こちらも HTML ではなく JSON API を直接叩きます。手順は2段階です。
+
+```
+1. POST https://idp.tripla.ai/api/client_sessions   {key, secret}
+   → data.client_session（以降 Client-Session ヘッダに載せる）
+
+2. GET  https://api.tripla.ai/hotels/4603/rooms
+        ?checkin_date=2026-10-30&checkout_date=2026-11-01
+        &rooms[][adults]=1&rooms[][children]=0
+   → {"plans": [...]}   plans が空なら満室
+```
+
+key と secret は、誰でも受け取る公開JS（`app.*.js`）に直書きされている
+**予約ウィジェット用の公開クレデンシャル**です。個人の資格情報ではありません。
+
+### 詰まりやすい点（すべて実測で判明）
+
+| 症状 | 原因 |
+|---|---|
+| `You don't have permission to access this` | **`App-Version: tripla-booking-widget/1.0` ヘッダが無い**。これが最大の関門 |
+| `Invalid checkin_date.` | パラメータ名が `checkin` ではなく **`checkin_date`**。形式は `YYYY-MM-DD` |
+| `Invalid adults or children` | この施設は `kids_type=share_bed` のため、**部屋ごとに `children` が必須** |
+| 配列の渡し方 | `rooms[][adults]=1` の形（サイト側の直列化と同じ） |
+
+ホテルの識別子は2種類あります。予約URLの `code=` にある UUID と、
+`settings/booking_widget` が返す数値の `hotel_id`（土岐は **4603**）です。
+在庫APIは `hotel_id` を使います。
+
+`total_price` は**滞在合計**です（`room_rate` に日ごとの内訳が入る）。
+同じ部屋タイプがプラン違いで何件も返るので、通知では**部屋タイプごとに最安1件**へ畳んでいます。
 
 ## なぜ cron を使っていないのか
 
@@ -140,7 +187,9 @@ https://www.toyoko-inn.com/search/result/?area=429&people=1&room=1&smoking=all&s
 |---|---|
 | `common.py` | LINE送信・HTTP取得・状態の読み書き |
 | `check_hotel.py` | 東横イン監視（1回ぶんのチェック） |
-| `state_hotel.json` | 前回の状態（連投防止用・自動更新） |
+| `state_hotel.json` | 東横インの前回の状態（連投防止用・自動更新） |
+| `check_routeinn.py` | ルートイン監視（1回ぶんのチェック） |
+| `state_routeinn.json` | ルートインの前回の状態（連投防止用・自動更新） |
 | `watch_loop.sh` | 5分ごとに確認し続けるループ本体 |
 | `.github/workflows/watch.yml` | ループの起動と再開 |
 | `handoff.sh` | 新しいセッションへの引き継ぎ。`bash handoff.sh` で現状が一望できる |
