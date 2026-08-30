@@ -23,10 +23,10 @@ git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
 save_state() {
-  if [[ -z "$(git status --porcelain state_hotel.json state_routeinn.json)" ]]; then
+  if [[ -z "$(git status --porcelain state_hotel.json state_routeinn.json state_tennimu.json)" ]]; then
     return
   fi
-  git add state_hotel.json state_routeinn.json
+  git add state_hotel.json state_routeinn.json state_tennimu.json
   git commit -q -m "状態更新: $(date -u '+%Y-%m-%d %H:%M UTC')"
   git pull -q --rebase origin main 2>/dev/null || true
   git push -q origin HEAD:main 2>/dev/null || echo "[warn] push に失敗。次の変化時にまとめて反映されます"
@@ -39,9 +39,10 @@ while (( SECONDS - start < RUN_FOR )); do
   echo "───── チェック #${n}　$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S JST') ─────"
 
   # 3回連続で失敗した場合はスクリプト側が LINE に警告を出す。
-  # 片方が落ちてももう片方は動かす（|| で握って次へ進める）。
+  # どれか1つが落ちても残りは動かす（|| で握って次へ進める）。
   "$PYTHON" check_hotel.py || echo "[warn] 東横イン監視が失敗しました"
   "$PYTHON" check_routeinn.py || echo "[warn] ルートイン監視が失敗しました"
+  "$PYTHON" check_tennimu.py || echo "[warn] テニミュ監視が失敗しました"
 
   save_state
 

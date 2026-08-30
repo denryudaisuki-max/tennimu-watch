@@ -1,0 +1,50 @@
+name: 1回だけ実行（手動）
+
+# 監視スクリプトを Actions 上で1回だけ走らせて、ログをすぐ読むためのもの。
+# 主な用途は疎通確認。「手元では取れるが GitHub の IP からは弾かれる」を見つけられる。
+# 監視ループとは concurrency グループが別なので、ループを止めずに使える。
+
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: "実行するスクリプト"
+        required: true
+        type: choice
+        options:
+          - check_tennimu.py
+          - check_routeinn.py
+          - check_hotel.py
+      notify:
+        description: "LINE にも送る（既定は送らず、ログに出すだけ）"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: check-once
+  cancel-in-progress: true
+
+permissions:
+  contents: read # 確認用。state は書き戻さない
+
+jobs:
+  check-once:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: ${{ inputs.script }} を1回実行
+        env:
+          # notify が false のときはトークンを渡さない。
+          # common.py は未設定なら本文を出力するだけで送信しない。
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ inputs.notify && secrets.LINE_CHANNEL_ACCESS_TOKEN || '' }}
+          # 入力は run: に直接展開せず、環境変数を経由してシェルに渡す
+          # （${{ }} をコマンドに埋めるとスクリプト注入の余地ができるため）。
+          SCRIPT: ${{ inputs.script }}
+        run: python "$SCRIPT"
