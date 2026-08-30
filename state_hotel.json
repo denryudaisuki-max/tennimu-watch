@@ -1,17 +1,11 @@
 {
   "parse_failures": 0,
-  "vacant": {
+  "qualified": {
     "1名1室": {
-      "00011": false,
-      "00024": false,
-      "00036": false,
-      "00058": false
-    },
-    "2名1室": {
-      "00011": false,
-      "00024": false,
-      "00036": false,
-      "00058": false
+      "00066": false,
+      "00018": false,
+      "00059": false,
+      "00100": false
     }
   }
 }

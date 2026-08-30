@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """
-東横インの空室を監視し、満室から空室ありに変わったら LINE に通知する。
+東横インの空室を監視し、条件を満たす部屋が出たら LINE に通知する。
 
 HTML をパースするのではなく、予約サイトが内部で使っている tRPC の
 JSON API（hotels.availabilities.prices）を直接叩く。認証不要で、
 ホテルごとに「空室が足りているか」と「最安値」が返る。
 
-人数・室数によって空室状況は変わる（1名では空いていても2名では満室、
-ということがある）ため、SEARCHES に並べた条件それぞれを個別に判定する。
+■ 金額について（重要）
+API が返す lowestPrice は「1泊あたり」ではなく **滞在の合計金額**。
+実測: 札幌駅北口 10/17 から 1泊 ¥15,700 / 2泊 ¥28,400。
+サイトの検索結果カードに出る「¥24,623〜」も同じく滞在合計なので、
+MAX_PRICE は画面に見えている数字と同じ土俵で比べられる。
+
+人数・室数によって空室状況は変わるため、SEARCHES に並べた条件を個別に判定する。
 """
 
 import json
@@ -19,24 +24,26 @@ from pathlib import Path
 from common import JST, http_get, line_push, load_state, save_state
 
 # ---- 監視条件 -------------------------------------------------------------
-AREA_ID = 439
-AREA_LABEL = "仙台"
-CHECKIN = "2026-10-03"  # 泊まる日（JST）
-NIGHTS = 1
+AREA_ID = 429
+AREA_LABEL = "札幌"
+CHECKIN = "2026-10-17"  # チェックイン日（JST）
+NIGHTS = 2  # 10/17 IN → 10/19 OUT
 SMOKING = "all"  # all / no_smoking / smoking
+
+# 滞在合計がこの金額未満のときだけ通知する（None なら金額を問わない）
+MAX_PRICE = 19000
 
 # 監視する人数・室数の組み合わせ。増やせばその条件も一緒に見る。
 SEARCHES = [
     {"people": 1, "rooms": 1},
-    {"people": 2, "rooms": 1},
 ]
 
-# 監視するホテル（コード: 名前）。検索結果に出ていた仙台の4館。
+# 監視するホテル（コード: 名前）。検索結果に出ていた札幌の4館。
 HOTELS = {
-    "00011": "東横INN仙台東口1号館",
-    "00024": "東横INN仙台東口2号館",
-    "00036": "東横INN仙台西口広瀬通",
-    "00058": "東横INN仙台駅西口中央",
+    "00066": "東横INN札幌駅北口",
+    "00018": "東横INN札幌駅西口北大前",
+    "00059": "東横INN札幌駅南口",
+    "00100": "東横INN札幌すすきの交差点",
 }
 # ---------------------------------------------------------------------------
 
@@ -52,7 +59,7 @@ def label_of(search: dict) -> str:
 def api_datetime(date_str: str, offset_days: int = 0) -> str:
     """JST の日付を、APIが要求する UTC ISO 形式に変換する。
 
-    2026-10-03(JST 00:00) -> 2026-10-02T15:00:00.000Z
+    2026-10-17(JST 00:00) -> 2026-10-16T15:00:00.000Z
     """
     d = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=JST)
     d += timedelta(days=offset_days)
@@ -104,18 +111,24 @@ def fetch_availability(search: dict) -> dict[str, dict]:
         return {}
 
 
+def qualifies(info: dict) -> bool:
+    """空室があり、かつ滞在合計が予算未満か。"""
+    if not info.get("existEnoughVacantRooms") or info.get("isUnderMaintenance"):
+        return False
+    price = info.get("lowestPrice") or 0
+    if MAX_PRICE is None:
+        return True
+    return 0 < price < MAX_PRICE
+
+
 def previous_for(state: dict, label: str) -> dict[str, bool]:
     """保存済みの状態から、その条件の前回値を取り出す。
 
-    条件が1つだった頃の古い形式 {"00011": false, ...} も読めるようにしておく。
+    監視対象（都市・日程・条件）を変えたときは、古い形式や別条件の値は
+    無視して作り直す。
     """
-    vacant = state.get("vacant") or {}
-    entry = vacant.get(label)
-    if isinstance(entry, dict):
-        return entry
-    if vacant and all(isinstance(v, bool) for v in vacant.values()):
-        return vacant  # 旧形式（1名1室のみを見ていた頃）
-    return {}
+    entry = (state.get("qualified") or {}).get(label)
+    return entry if isinstance(entry, dict) else {}
 
 
 def record_failure(state: dict, reason: str) -> int:
@@ -140,10 +153,14 @@ def main() -> int:
     now = datetime.now(JST).strftime("%Y-%m-%d %H:%M JST")
     state = load_state(STATE_PATH)
 
-    print(f"[{now}] 東横イン {AREA_LABEL}　{CHECKIN} 〜 {checkout_date()}")
+    budget = f"／滞在合計 ¥{MAX_PRICE:,} 未満" if MAX_PRICE else ""
+    print(
+        f"[{now}] 東横イン {AREA_LABEL}　{CHECKIN} 〜 {checkout_date()}"
+        f"（{NIGHTS}泊{budget}）"
+    )
 
-    new_vacant: dict[str, dict[str, bool]] = {}
-    found: dict[str, list[str]] = {}  # 条件ごとの「今回あらたに空いたホテル」
+    new_state: dict[str, dict[str, bool]] = {}
+    found: dict[str, list[str]] = {}  # 条件ごとの「今回あらたに条件を満たしたホテル」
     all_prices: dict[str, dict[str, dict]] = {}
 
     for search in SEARCHES:
@@ -158,16 +175,18 @@ def main() -> int:
         print(f"  ● {label}")
         for code, name in HOTELS.items():
             info = prices.get(code) or {}
-            vacant = bool(info.get("existEnoughVacantRooms")) and not info.get(
-                "isUnderMaintenance"
-            )
-            current[code] = vacant
+            ok = qualifies(info)
+            current[code] = ok
             price = info.get("lowestPrice") or 0
-            mark = "★" if vacant else " "
-            detail = f"¥{price:,}" if vacant and price else "満室"
-            print(f"    {mark} {name}: {detail}")
+            if not info.get("existEnoughVacantRooms"):
+                detail = "満室"
+            elif MAX_PRICE and price >= MAX_PRICE:
+                detail = f"¥{price:,}（予算オーバー）"
+            else:
+                detail = f"¥{price:,}"
+            print(f"    {'★' if ok else ' '} {name}: {detail}")
 
-        new_vacant[label] = current
+        new_state[label] = current
         hit = [c for c, v in current.items() if v and not prev.get(c, False)]
         if hit:
             found[label] = hit
@@ -176,9 +195,9 @@ def main() -> int:
 
     if found:
         lines = [
-            "🏨 東横インに空室が出ました！",
+            "🏨 条件に合う部屋が出ました！",
             "",
-            f"{AREA_LABEL}　{CHECKIN} 〜 {checkout_date()}",
+            f"{AREA_LABEL}　{CHECKIN} 〜 {checkout_date()}（{NIGHTS}泊）",
         ]
         for search in SEARCHES:
             label = label_of(search)
@@ -187,17 +206,16 @@ def main() -> int:
             lines += ["", f"【{label}】"]
             for code in found[label]:
                 price = (all_prices[label].get(code) or {}).get("lowestPrice") or 0
-                yen = f"　¥{price:,}〜" if price else ""
-                lines.append(f"・{HOTELS[code]}{yen}")
+                lines.append(f"・{HOTELS[code]}　¥{price:,}（{NIGHTS}泊合計）")
                 lines.append(f"　{search_url(search, code)}")
         lines += ["", f"検知 {now}"]
         text = "\n".join(lines)
         print("--- 通知 ---\n" + text)
         line_push(text)
     else:
-        print("  → 変化なし（通知しません）")
+        print("  → 条件を満たす部屋なし（通知しません）")
 
-    state["vacant"] = new_vacant
+    state["qualified"] = new_state
     save_state(STATE_PATH, state)
     return 0
 
