@@ -72,7 +72,11 @@ def fetch_html() -> str:
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(args=["--no-sandbox"])
+        # HTTP/2 で切られるため HTTP/1.1 を使わせる。
+        # 指紋の偽装ではなく、プロトコルの選択。
+        browser = p.chromium.launch(
+            args=["--no-sandbox", "--disable-http2"]
+        )
         try:
             page = browser.new_page(user_agent=UA, locale="ja-JP")
             page.goto(URL, wait_until="domcontentloaded", timeout=45000)
