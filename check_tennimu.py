@@ -44,8 +44,18 @@ EVENT_NAME = "ミュージカル『新テニスの王子様』The Final Stage"
 EVENT_URL = "https://eplus.jp/sf/detail/0473460021"
 
 # 復活を待っている公演。増やせばまとめて見る。
+# uketsuke を書くと、その文字を名前に含む受付だけを見る（未指定なら全受付）。
 TARGETS = [
+    # 東京・一般発売（受付の指定なし＝どの受付でも買えるようになったら通知）
     {"date": "2026/11/15", "time": "17:30"},
+    # 大阪 SkyシアターMBS・土日の「当日引換券」だけを見る
+    {"date": "2026/10/17", "time": "17:30", "uketsuke": "当日引換券"},
+    {"date": "2026/10/18", "time": "12:30", "uketsuke": "当日引換券"},
+    {"date": "2026/10/18", "time": "17:30", "uketsuke": "当日引換券"},
+    {"date": "2026/10/24", "time": "12:30", "uketsuke": "当日引換券"},
+    {"date": "2026/10/24", "time": "17:30", "uketsuke": "当日引換券"},
+    {"date": "2026/10/25", "time": "12:30", "uketsuke": "当日引換券"},
+    {"date": "2026/10/25", "time": "17:30", "uketsuke": "当日引換券"},
     # 2026/10/2 18:00 は公演終了により削除（2026-10-15）。
     # 公演日を過ぎた対象は自動で見送るので、消し忘れても失敗にはならない。
 ]
@@ -59,7 +69,17 @@ PARSE_FAIL_ALERT_AT = 3
 
 
 def label_of(target: dict) -> str:
+    if target.get("uketsuke"):
+        return f"{target['date']} {target['time']} [{target['uketsuke']}]"
     return f"{target['date']} {target['time']}"
+
+
+def matching_uketsuke(perf: dict, target: dict) -> list[dict]:
+    """その対象が見たい受付だけを返す。uketsuke 未指定なら全受付。"""
+    want = target.get("uketsuke")
+    if not want:
+        return perf["uketsuke"]
+    return [u for u in perf["uketsuke"] if want in u["name"]]
 
 
 def strip_tags(s: str) -> str:
@@ -67,31 +87,63 @@ def strip_tags(s: str) -> str:
 
 
 def parse_performances(page: str) -> list[dict]:
-    """公演ごとに 日付・開演時刻・会場・受付ステータス群 を取り出す。"""
+    """公演ごとに 日付・開演時刻・会場・地域 と、受付ごとの状態を取り出す。
+
+    1公演に受付が複数ある（一般発売／先行／当日引換券／キャンセル待ちなど）。
+    以前は全受付の状態を1つのリストに混ぜていたため「一般発売が受付中」でも
+    「当日引換券が復活した」と誤判定しうる作りだった。受付ごとに分けて持つ。
+    """
     out = []
     # 公演1件ごとのブロックに切る
     for chunk in page.split('class="block-ticket-fixed__date"')[1:]:
         ymd = re.search(r"<span>(\d{4})/</span>\s*<span>(\d{1,2})/(\d{1,2})", chunk)
         tm = re.search(r'class="block-ticket-fixed__time">開演：(\d{1,2}:\d{2})', chunk)
         vn = re.search(r'class="block-ticket-fixed__venue">([^<]*)<', chunk)
+        rg = re.search(r'class="block-ticket-fixed__region">([^<]*)<', chunk)
         if not ymd or not tm:
             continue
         y, mo, d = (int(x) for x in ymd.groups())
-        statuses = [
-            strip_tags(m)
-            for m in re.findall(
-                r'<span class="ticket-status__item[^"]*"\s*>([^<]*)</span>', chunk
+
+        uketsuke = []
+        for sec in chunk.split('<section class="block-ticket"')[1:]:
+            nm = re.search(r'class="block-ticket__title">(.*?)</h4>', sec, re.S)
+            statuses = [
+                strip_tags(m)
+                for m in re.findall(
+                    r'<span class="ticket-status__item[^"]*"\s*>([^<]*)</span>', sec
+                )
+            ]
+            uketsuke.append(
+                {
+                    "name": strip_tags(nm.group(1)) if nm else "",
+                    "statuses": [s for s in statuses if s],
+                }
             )
-        ]
+
         out.append(
             {
                 "date": f"{y}/{mo}/{d}",
                 "time": tm.group(1),
                 "venue": vn.group(1).strip() if vn else "",
-                "statuses": [s for s in statuses if s],
+                "region": strip_tags(rg.group(1)) if rg else "",
+                "uketsuke": uketsuke,
             }
         )
-    return out
+
+    # 同じ公演が複数ブロックに分かれて載る。受付の種類ごとに別ブロックになるため、
+    # 一般発売だけのブロックと当日引換券だけのブロックが別々に現れる。
+    # まとめないと、先に見つかったブロックの受付しか見えない。
+    merged: dict[tuple[str, str], dict] = {}
+    for p in out:
+        key = (p["date"], p["time"])
+        if key in merged:
+            merged[key]["uketsuke"] += p["uketsuke"]
+            # 会場・地域は空でない方を残す
+            merged[key]["venue"] = merged[key]["venue"] or p["venue"]
+            merged[key]["region"] = merged[key]["region"] or p["region"]
+        else:
+            merged[key] = p
+    return list(merged.values())
 
 
 def target_date(target: dict) -> date:
@@ -166,22 +218,40 @@ def main() -> int:
             print(f"    ⚠ {label} が一覧に見つかりません")
             continue
 
-        buyable = any(any(b in s for b in BUYABLE) for s in p["statuses"])
+        targeted = matching_uketsuke(p, target)
+        if not targeted:
+            # 受付そのものが無い。受付は公演前後で消えるのが普通なので失敗にはしない
+            # （失敗にすると公演当日に誤警告が出る）。ただしログには必ず残す。
+            new_state[label] = False
+            print(f"      {label}　該当する受付が今はありません")
+            continue
+
+        hit = [
+            u
+            for u in targeted
+            if any(any(b in s for b in BUYABLE) for s in u["statuses"])
+        ]
+        buyable = bool(hit)
         new_state[label] = buyable
         mark = "★" if buyable else " "
-        print(f"    {mark} {label}　{p['venue']}　{' / '.join(p['statuses']) or '(状態なし)'}")
+        detail = " / ".join(
+            f"{u['name']}: {'・'.join(u['statuses']) or '状態なし'}" for u in targeted
+        )
+        print(f"    {mark} {label}　{p['venue']}　{detail}")
 
         if buyable and not (state.get("buyable") or {}).get(label):
-            found.append({"label": label, **p})
+            found.append({"label": label, "perf": p, "uketsuke": hit})
 
     if found:
         lines = ["🎫 チケットが復活しました！", "", EVENT_NAME]
         for f in found:
+            p = f["perf"]
             lines += [
                 "",
-                f"{f['label']}　{f['venue']}",
-                f"状態: {' / '.join(f['statuses'])}",
+                f"{p['date']} {p['time']}　{p['venue']}{p['region']}",
             ]
+            for u in f["uketsuke"]:
+                lines.append(f"・{u['name']}　{'・'.join(u['statuses'])}")
         lines += ["", EVENT_URL, "", f"検知 {now}"]
         text = "\n".join(lines)
         print("--- 通知 ---\n" + text)
