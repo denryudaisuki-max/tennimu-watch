@@ -14,6 +14,7 @@ on:
         options:
           - check_tennimu.py
           - check_routeinn.py
+          - check_toyoko.py
       notify:
         description: "LINE にも送る（既定は送らず、ログに出すだけ）"
         required: false

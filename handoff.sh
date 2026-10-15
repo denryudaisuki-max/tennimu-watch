@@ -14,9 +14,11 @@ line "■ これは何か"
 cat <<'EOS'
 ホテルの空室とチケットの復活を5分ごとに監視し、条件を満たしたら LINE に通知する仕組み。
 GitHub Actions 上で動いているので、Mac は閉じていてよい。
-いま監視しているのは2件（それぞれ独立。1つ落ちても残りは動く）:
-  ① ホテルルートイン土岐  2026-10-30〜11-01（2泊）空室が出たら（金額条件なし）
-  ② テニミュ The Final Stage  「予定枚数終了→受付中」に変わったら
+いま監視しているのは3件（それぞれ独立。1つ落ちても残りは動く）:
+  ① 東横INN大阪ドーム前  2027-01-23→24(1泊) または →25(2泊)
+                          空室が出たら（金額・喫煙・部屋タイプ不問）
+  ② ホテルルートイン土岐  2026-10-30〜11-01（2泊）空室が出たら（金額条件なし）
+  ③ テニミュ The Final Stage  「予定枚数終了→受付中」に変わったら
        ・2026-11-15(日)17:30 東京（受付の種類を問わない）
        ・大阪 SkyシアターMBS の土日7公演（当日引換券のみ）
          10/17(土)17:30 10/18(日)12:30/17:30
@@ -34,15 +36,22 @@ else
   echo "  作業ツリーはクリーン"
 fi
 
-line "■ 監視条件① ルートイン（check_routeinn.py より）"
+line "■ 監視条件① 東横イン（check_toyoko.py より）"
+grep -E '^(HOTEL_CODE|HOTEL_NAME|SMOKING|MAX_PRICE) *=' check_toyoko.py | sed 's/^/  /'
+echo "  STAYS:"; sed -n '/^STAYS = \[/,/^\]/p' check_toyoko.py | sed 's/^/    /'
+echo "  SEARCHES:"; sed -n '/^SEARCHES = \[/,/^\]/p' check_toyoko.py | sed 's/^/    /'
+
+line "■ 監視条件② ルートイン（check_routeinn.py より）"
 grep -E '^(HOTEL_NAME|HOTEL_CODE|HOTEL_ID|CHECKIN|CHECKOUT|MAX_PRICE) *=' check_routeinn.py | sed 's/^/  /'
 echo "  SEARCHES:"; sed -n '/^SEARCHES = \[/,/^\]/p' check_routeinn.py | sed 's/^/    /'
 
-line "■ 監視条件② テニミュ（check_tennimu.py より）"
+line "■ 監視条件③ テニミュ（check_tennimu.py より）"
 grep -E '^(EVENT_NAME|EVENT_URL) *=' check_tennimu.py | sed 's/^/  /'
 echo "  TARGETS:"; sed -n '/^TARGETS = \[/,/^\]/p' check_tennimu.py | sed 's/^/    /'
 
 line "■ 今の状況（実際に取りにいって確認）"
+"$PY" check_toyoko.py 2>&1 | sed 's/^/  /' || echo "  （実行に失敗）"
+echo
 "$PY" check_routeinn.py 2>&1 | sed 's/^/  /' || echo "  （実行に失敗）"
 echo
 "$PY" check_tennimu.py 2>&1 | sed 's/^/  /' || echo "  （実行に失敗）"
@@ -61,15 +70,25 @@ fi
 
 line "■ 引き継ぎ事項（コードからは読み取れないこと）"
 cat <<'EOS'
-  1. 【廃止 2026-10-15】東横イン札幌の監視はユーザーの指示で削除した。
-     10/17〜10/19 の宿で「2泊合計 ¥19,000 未満」を待っていたが、
-     直前まで最安 ¥22,400 までしか下がらず条件を満たさないまま終了。
-     復活させるなら git 履歴から check_hotel.py と state_hotel.json を戻す。
-     そのとき必要になる知識だけ残す:
-       ・tRPC の JSON API hotels.availabilities.prices を叩いていた（認証不要）
-       ・lowestPrice は「1泊あたり」ではなく滞在合計。実測で確定済み。
-         札幌駅北口 10/17〜 1泊 ¥15,700 / 2泊 ¥28,400 / 3泊 ¥41,100
-       ・MAX_PRICE も滞在合計で比べる（ユーザー本人に確認済み）
+  1. 東横イン監視の経緯。ファイル名が変わっているので混同しないこと。
+     ・札幌4館（check_hotel.py）: 2026-10-15 にユーザー指示で削除。
+       10/17〜10/19 で「2泊合計 ¥19,000 未満」を待ったが、直前まで
+       最安 ¥22,400 までしか下がらず条件を満たさないまま終了した。
+     ・大阪ドーム前（check_toyoko.py）: 2026-10-16 に追加。上記のコードを
+       git 履歴から復元して組み替えたもの。1館・複数の泊まり方を見る形にした。
+       2027-01-23→24(1泊) と →25(2泊) を別々に判定。金額・喫煙・部屋タイプ不問。
+     ・1/23(土) が満室なのは「予約開始前」ではなく売り切れ。実測 2026-10-16:
+         1/21 ¥7,800 / 1/22 ¥7,800 / 1/23 満室 / 1/24 ¥10,800 / 1/29 ¥8,800
+       1/24 以降も予約できているので受付自体は開いている。土曜だけ埋まっている。
+       「遠い日付だから取れないのでは」と疑う前に、前後の日付を叩いて確かめること。
+
+  2. 東横インAPIの要点（tRPC・認証不要）。
+     ・hotels.availabilities.prices を叩く。
+     ・lowestPrice は「1泊あたり」ではなく滞在合計。実測で確定済み。
+       札幌駅北口 10/17〜 1泊 ¥15,700 / 2泊 ¥28,400 / 3泊 ¥41,100
+     ・MAX_PRICE も滞在合計で比べる（ユーザー本人に確認済み）。
+       大阪ドーム前は MAX_PRICE=None なので判定には使わず表示だけ。
+     ・isUnderMaintenance が true のときは満室扱いにしている。
 
   3. cron は使い物にならないので使っていない。
      実測で */5 に対して実行率7%、間隔の中央値59分、最大208分の空白。
@@ -157,7 +176,8 @@ EOS
 
 line "■ よく使う操作"
 cat <<EOS
-  1回だけ確認          python3 check_routeinn.py
+  1回だけ確認          python3 check_toyoko.py
+                       python3 check_routeinn.py
                        python3 check_tennimu.py
   Actions上で1回試す    gh workflow run "1回だけ実行（手動）" --repo $REPO \\
                          -f script=check_tennimu.py -f notify=false
@@ -178,7 +198,8 @@ EOS
 
 line "■ 新しいセッションでの最初の一言（コピペ用）"
 cat <<EOS
-  空室とチケットの監視（ルートイン土岐／テニミュ）をやっています。
+  空室とチケットの監視（東横イン大阪ドーム前／ルートイン土岐／テニミュ）を
+  やっています。
   $(pwd) にコードがあります。
   bash handoff.sh を実行して現状を把握してください。
 EOS
