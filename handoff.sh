@@ -14,10 +14,9 @@ line "■ これは何か"
 cat <<'EOS'
 ホテルの空室とチケットの復活を5分ごとに監視し、条件を満たしたら LINE に通知する仕組み。
 GitHub Actions 上で動いているので、Mac は閉じていてよい。
-いま監視しているのは3件（それぞれ独立。1つ落ちても残りは動く）:
-  ① 東横イン札幌 4館      2026-10-17〜10-19（2泊）滞在合計 ¥19,000 未満のとき
-  ② ホテルルートイン土岐  2026-10-30〜11-01（2泊）空室が出たら（金額条件なし）
-  ③ テニミュ The Final Stage  2026-11-15(日)17:30 が
+いま監視しているのは2件（それぞれ独立。1つ落ちても残りは動く）:
+  ① ホテルルートイン土岐  2026-10-30〜11-01（2泊）空室が出たら（金額条件なし）
+  ② テニミュ The Final Stage  2026-11-15(日)17:30 が
                               「予定枚数終了→受付中」に変わったら
 詳細はすべて README.md に書いてある。まずそれを読むこと。
 EOS
@@ -32,22 +31,15 @@ else
   echo "  作業ツリーはクリーン"
 fi
 
-line "■ 監視条件① 東横イン（check_hotel.py より）"
-grep -E '^(AREA_ID|AREA_LABEL|CHECKIN|NIGHTS|SMOKING|MAX_PRICE) *=' check_hotel.py | sed 's/^/  /'
-echo "  SEARCHES:"; sed -n '/^SEARCHES = \[/,/^\]/p' check_hotel.py | sed 's/^/    /'
-echo "  HOTELS:"; sed -n '/^HOTELS = {/,/^}/p' check_hotel.py | sed 's/^/    /'
-
-line "■ 監視条件② ルートイン（check_routeinn.py より）"
+line "■ 監視条件① ルートイン（check_routeinn.py より）"
 grep -E '^(HOTEL_NAME|HOTEL_CODE|HOTEL_ID|CHECKIN|CHECKOUT|MAX_PRICE) *=' check_routeinn.py | sed 's/^/  /'
 echo "  SEARCHES:"; sed -n '/^SEARCHES = \[/,/^\]/p' check_routeinn.py | sed 's/^/    /'
 
-line "■ 監視条件③ テニミュ（check_tennimu.py より）"
+line "■ 監視条件② テニミュ（check_tennimu.py より）"
 grep -E '^(EVENT_NAME|EVENT_URL) *=' check_tennimu.py | sed 's/^/  /'
 echo "  TARGETS:"; sed -n '/^TARGETS = \[/,/^\]/p' check_tennimu.py | sed 's/^/    /'
 
 line "■ 今の状況（実際に取りにいって確認）"
-"$PY" check_hotel.py 2>&1 | sed 's/^/  /' || echo "  （実行に失敗）"
-echo
 "$PY" check_routeinn.py 2>&1 | sed 's/^/  /' || echo "  （実行に失敗）"
 echo
 "$PY" check_tennimu.py 2>&1 | sed 's/^/  /' || echo "  （実行に失敗）"
@@ -66,16 +58,15 @@ fi
 
 line "■ 引き継ぎ事項（コードからは読み取れないこと）"
 cat <<'EOS'
-  1. 【決着 2026-08-30】MAX_PRICE=19000 は「滞在合計」。ユーザー本人に確認済み。
-     「1泊あたり」ではない。もう蒸し返さなくてよい。
-     ・2泊合計が ¥19,000 未満のときだけ通知する、が正しい挙動。
-     ・1泊あたり ¥9,500 相当。東横インの通常料金としては自然な水準で、
-       10/17の札幌が高騰しているのが平常に戻るのを待つ、という設定。
-     ・現状 北口は2泊 ¥28,400 なので「通知しない」で正しい。約33%の値下がりが必要。
-
-  2. lowestPrice は「滞在合計」で確定（2026-08-30 に1/2/3泊を叩いて再実測）。
-     札幌駅北口 10/17〜  1泊 ¥15,700 ／ 2泊 ¥28,400 ／ 3泊 ¥41,100
-     2泊目以降は +¥12,700/泊。泊数に比例して増えるので合計で確定。推測ではない。
+  1. 【廃止 2026-10-15】東横イン札幌の監視はユーザーの指示で削除した。
+     10/17〜10/19 の宿で「2泊合計 ¥19,000 未満」を待っていたが、
+     直前まで最安 ¥22,400 までしか下がらず条件を満たさないまま終了。
+     復活させるなら git 履歴から check_hotel.py と state_hotel.json を戻す。
+     そのとき必要になる知識だけ残す:
+       ・tRPC の JSON API hotels.availabilities.prices を叩いていた（認証不要）
+       ・lowestPrice は「1泊あたり」ではなく滞在合計。実測で確定済み。
+         札幌駅北口 10/17〜 1泊 ¥15,700 / 2泊 ¥28,400 / 3泊 ¥41,100
+       ・MAX_PRICE も滞在合計で比べる（ユーザー本人に確認済み）
 
   3. cron は使い物にならないので使っていない。
      実測で */5 に対して実行率7%、間隔の中央値59分、最大208分の空白。
@@ -145,8 +136,7 @@ EOS
 
 line "■ よく使う操作"
 cat <<EOS
-  1回だけ確認          python3 check_hotel.py
-                       python3 check_routeinn.py
+  1回だけ確認          python3 check_routeinn.py
                        python3 check_tennimu.py
   Actions上で1回試す    gh workflow run "1回だけ実行（手動）" --repo $REPO \\
                          -f script=check_tennimu.py -f notify=false
@@ -161,16 +151,13 @@ cat <<EOS
                        空きのある日を指定すると LINE が届く。本番の監視ループとは
                        concurrency グループが別なので、走らせたまま試せる。
                        本番ファイルは書き換えないので、戻す作業も要らない。
-  通知テスト（東横イン）
-                       check_hotel.py の MAX_PRICE を一時的に 30000 にして実行
-                       （確認後は必ず戻すこと）
   ループを試す         引き継ぎ事項9を読むこと。本番に push するので
                        使い捨てのコピーを作ってから回す
 EOS
 
 line "■ 新しいセッションでの最初の一言（コピペ用）"
 cat <<EOS
-  空室とチケットの監視（東横イン札幌／ルートイン土岐／テニミュ）をやっています。
+  空室とチケットの監視（ルートイン土岐／テニミュ）をやっています。
   $(pwd) にコードがあります。
   bash handoff.sh を実行して現状を把握してください。
 EOS
