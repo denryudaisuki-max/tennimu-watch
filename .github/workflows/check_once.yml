@@ -16,6 +16,7 @@ on:
           - check_routeinn.py
           - check_toyoko.py
           - check_hearton.py
+          - check_lawson.py
       notify:
         description: "LINE にも送る（既定は送らず、ログに出すだけ）"
         required: false
@@ -39,6 +40,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      # ローチケは通常のHTTPクライアントを遮断するため、ここだけ実ブラウザが要る。
+      - name: Playwright を用意（check_lawson.py のときだけ）
+        if: inputs.script == 'check_lawson.py'
+        run: |
+          python -m pip install --quiet playwright
+          python -m playwright install --with-deps chromium
 
       - name: ${{ inputs.script }} を1回実行
         env:
