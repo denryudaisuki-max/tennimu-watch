@@ -4,8 +4,8 @@
 
 ■■ 現在このスクリプトは動かない。本番ループには組み込んでいない。■■
 
-2026-10-16 に GitHub Actions 上でヘッドレス Chrome から試したが、
-net::ERR_HTTP2_PROTOCOL_ERROR で弾かれた（手元の curl と同じエラー）。
+2026-10-16 に GitHub Actions 上でヘッドレス Chrome から HTTP/2・HTTP/1.1 の
+両方で試したが、どちらも弾かれた（ERR_HTTP2_PROTOCOL_ERROR / タイムアウト）。
 l-tike 側の bot 対策で、データセンターIPからは実ブラウザでも通らない。
 
 これ以上通すにはブラウザ指紋の偽装か住宅用プロキシが要る。
@@ -19,11 +19,13 @@ l-tike 側の bot 対策で、データセンターIPからは実ブラウザで
 --- 以下、調査でわかったこと ---
 
 ■ 遮断の実測（2026-10-16）
-  手元 curl HTTP/2            → INTERNAL_ERROR で切断
-  手元 curl HTTP/1.1          → タイムアウト
-  手元 Python urllib          → タイムアウト
-  手元の実ブラウザ（住宅IP）   → 読める
-  Actions のヘッドレス Chrome → ERR_HTTP2_PROTOCOL_ERROR で弾かれる  ← ここで詰んだ
+  手元 curl HTTP/2                      → INTERNAL_ERROR で切断
+  手元 curl HTTP/1.1                    → タイムアウト
+  手元 Python urllib                    → タイムアウト
+  手元の実ブラウザ（住宅IP・HTTP/2）     → 読める
+  Actions ヘッドレスChrome（HTTP/2）     → ERR_HTTP2_PROTOCOL_ERROR
+  Actions ヘッドレスChrome（HTTP/1.1）   → タイムアウト
+  → プロトコルを変えても駄目。通るのは住宅IPの実ブラウザだけ。IP判定とみられる。
 
 ■ 取れる粒度（重要）
 ローチケは「受付」単位でしか状態を持たない。ページ内の JSON はこうなっている:

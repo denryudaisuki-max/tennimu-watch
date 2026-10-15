@@ -193,14 +193,17 @@ cat <<'EOS'
 
  13. 【決着 2026-10-16】ローソンチケットは監視できない。再挑戦しなくてよい。
      l-tike.com は bot 対策があり、次のとおり全部弾かれた:
-       手元 curl HTTP/2            → INTERNAL_ERROR
-       手元 curl HTTP/1.1          → タイムアウト
-       手元 Python urllib          → タイムアウト
-       手元の実ブラウザ（住宅IP）   → 読める
-       Actions のヘッドレスChrome  → ERR_HTTP2_PROTOCOL_ERROR
-     Playwright を入れて Actions から試したが、データセンターIPでは
-     実ブラウザでも通らなかった。これ以上は指紋偽装か住宅用プロキシになり、
-     転売対策の回避にあたるのでやらない。
+       手元 curl HTTP/2                    → INTERNAL_ERROR
+       手元 curl HTTP/1.1                  → タイムアウト
+       手元 Python urllib                  → タイムアウト
+       手元の実ブラウザ（住宅IP）           → 読める
+       Actions ヘッドレスChrome HTTP/2     → ERR_HTTP2_PROTOCOL_ERROR
+       Actions ヘッドレスChrome HTTP/1.1   → タイムアウト
+     Playwright を入れ、プロトコルも変えて試したが全部駄目だった。
+     通るのは住宅IPの実ブラウザだけで、IP判定とみられる。
+     これ以上は指紋偽装か住宅用プロキシになり、転売対策の回避にあたるのでやらない。
+     クラウドで動かす以上この件は解決しない。手元のMacで動かすなら可能性はあるが、
+     Mac が起きている間しか見られないので「Macは閉じていてよい」が崩れる。
      check_lawson.py は残してあるが本番ループには入れていない。
      ローチケ側の対策が変わったときの再検証用。
      「1回だけ実行（手動）」から選べば試せる。

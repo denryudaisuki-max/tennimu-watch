@@ -239,9 +239,11 @@ TSC の受付は**公開ページに1件も載りません**。TSCページを�
 | 手元の curl（HTTP/1.1） | タイムアウト |
 | 手元の Python urllib | タイムアウト |
 | 手元の実ブラウザ（住宅IP） | **読める** |
-| Actions のヘッドレス Chrome | `ERR_HTTP2_PROTOCOL_ERROR` |
+| Actions のヘッドレス Chrome（HTTP/2） | `ERR_HTTP2_PROTOCOL_ERROR` |
+| Actions のヘッドレス Chrome（HTTP/1.1） | タイムアウト |
 
-Playwright を入れて Actions から実ブラウザで試しましたが、データセンターIPでは通りませんでした。
+Playwright を入れ、プロトコルも HTTP/1.1 に変えて試しましたが、どちらも通りませんでした。
+通るのは住宅IPの実ブラウザだけで、IPで判定されているとみられます。
 これ以上はブラウザ指紋の偽装か住宅用プロキシが必要で、転売対策の回避にあたるため行いません。
 
 `check_lawson.py` は残していますが**本番ループには組み込んでいません**。
