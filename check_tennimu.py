@@ -34,7 +34,7 @@
 import html
 import re
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from common import JST, http_get, line_push, load_state, save_state
@@ -46,7 +46,8 @@ EVENT_URL = "https://eplus.jp/sf/detail/0473460021"
 # 復活を待っている公演。増やせばまとめて見る。
 TARGETS = [
     {"date": "2026/11/15", "time": "17:30"},
-    {"date": "2026/10/2", "time": "18:00"},
+    # 2026/10/2 18:00 は公演終了により削除（2026-10-15）。
+    # 公演日を過ぎた対象は自動で見送るので、消し忘れても失敗にはならない。
 ]
 
 # この文字列が受付ステータスにあれば「買える」とみなす。
@@ -93,11 +94,16 @@ def parse_performances(page: str) -> list[dict]:
     return out
 
 
+def target_date(target: dict) -> date:
+    y, mo, d = (int(x) for x in target["date"].split("/"))
+    return date(y, mo, d)
+
+
 def find_target(performances: list[dict], target: dict) -> dict | None:
-    want_y, want_m, want_d = (int(x) for x in target["date"].split("/"))
+    want = target_date(target)
     for p in performances:
         y, mo, d = (int(x) for x in p["date"].split("/"))
-        if (y, mo, d) == (want_y, want_m, want_d) and p["time"] == target["time"]:
+        if date(y, mo, d) == want and p["time"] == target["time"]:
             return p
     return None
 
@@ -140,13 +146,25 @@ def main() -> int:
 
     new_state: dict[str, bool] = {}
     found: list[dict] = []
+    missing: list[str] = []
+    today = datetime.now(JST).date()
 
     for target in TARGETS:
         label = label_of(target)
+
+        # 公演日を過ぎた対象は、ページから消えるのが当たり前なので失敗にしない。
+        # ここを失敗扱いにしていたため、10/2 公演の終了後に監視が11日間止まった。
+        if target_date(target) < today:
+            print(f"      {label} は公演日を過ぎたので見ません")
+            continue
+
         p = find_target(performances, target)
         if p is None:
-            # 対象公演が消えた。これも黙って見逃さない。
-            return record_failure(state, f"対象公演が見つかりません: {label}")
+            # まだ未来の公演が一覧から消えているのは異常。ただしここで抜けると
+            # 他の公演の通知まで止まるので、記録だけして最後にまとめて報告する。
+            missing.append(label)
+            print(f"    ⚠ {label} が一覧に見つかりません")
+            continue
 
         buyable = any(any(b in s for b in BUYABLE) for s in p["statuses"])
         new_state[label] = buyable
@@ -155,8 +173,6 @@ def main() -> int:
 
         if buyable and not (state.get("buyable") or {}).get(label):
             found.append({"label": label, **p})
-
-    state["parse_failures"] = 0
 
     if found:
         lines = ["🎫 チケットが復活しました！", "", EVENT_NAME]
@@ -172,10 +188,19 @@ def main() -> int:
         line_push(text)
     elif any(new_state.values()):
         print("  → 買える状態だが前回から変化なし（通知しません）")
-    else:
+    elif new_state:
         print("  → まだ復活していません（通知しません）")
+    else:
+        print("  → 見るべき対象がありません（公演日を過ぎた対象のみ）")
 
+    # 取れた分の状態は、欠けた対象があっても必ず保存する。
+    # 保存しないと、次回に同じ復活をもう一度通知してしまう。
     state["buyable"] = new_state
+
+    if missing:
+        return record_failure(state, "対象公演が見つかりません: " + ", ".join(missing))
+
+    state["parse_failures"] = 0
     save_state(STATE_PATH, state)
     return 0
 
