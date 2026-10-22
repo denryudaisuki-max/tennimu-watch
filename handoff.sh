@@ -14,17 +14,16 @@ line "■ これは何か"
 cat <<'EOS'
 ホテルの空室とチケットの復活を5分ごとに監視し、条件を満たしたら LINE に通知する仕組み。
 GitHub Actions 上で動いているので、Mac は閉じていてよい。
-いま監視しているのは4件（それぞれ独立。1つ落ちても残りは動く）:
+いま監視しているのは3件（それぞれ独立。1つ落ちても残りは動く）:
   ① 東横INN大阪ドーム前  2027-01-23→24(1泊) または →25(2泊)
                           空室が出たら（金額・喫煙・部屋タイプ不問）
-  ② ハートンホテル西梅田  2026-10-24〜10-25（1泊）予約できるようになったら
-                          ※Trip.com の在庫を見ている。公式の在庫ではない
-  ③ ホテルルートイン土岐  2026-10-30〜11-01（2泊）空室が出たら（金額条件なし）
-  ④ テニミュ The Final Stage  「予定枚数終了→受付中」に変わったら
+  ② ホテルルートイン土岐  2026-10-30〜11-01（2泊）空室が出たら（金額条件なし）
+  ③ テニミュ The Final Stage  「予定枚数終了→受付中」に変わったら
        ・2026-11-15(日)17:30 東京（受付の種類を問わない）
-       ・大阪 SkyシアターMBS の土日7公演（当日引換券のみ）
-         10/17(土)17:30 10/18(日)12:30/17:30
+       ・大阪 SkyシアターMBS の土日公演（当日引換券のみ）
          10/24(土)12:30/17:30 10/25(日)12:30/17:30
+         ※10/17・10/18 も対象に入れていたが公演終了。
+           公演日を過ぎた対象は自動で見送るので TARGETS に残っていてよい。
 詳細はすべて README.md に書いてある。まずそれを読むこと。
 EOS
 
@@ -43,22 +42,16 @@ grep -E '^(HOTEL_CODE|HOTEL_NAME|SMOKING|MAX_PRICE) *=' check_toyoko.py | sed 's
 echo "  STAYS:"; sed -n '/^STAYS = \[/,/^\]/p' check_toyoko.py | sed 's/^/    /'
 echo "  SEARCHES:"; sed -n '/^SEARCHES = \[/,/^\]/p' check_toyoko.py | sed 's/^/    /'
 
-line "■ 監視条件② ハートンホテル西梅田（check_hearton.py より）"
-grep -E '^(HOTEL_NAME|HOTEL_ID|BUYABLE_STATUS) *=' check_hearton.py | sed 's/^/  /'
-echo "  STAYS:"; sed -n '/^STAYS = \[/,/^\]/p' check_hearton.py | sed 's/^/    /'
-
-line "■ 監視条件③ ルートイン（check_routeinn.py より）"
+line "■ 監視条件② ルートイン（check_routeinn.py より）"
 grep -E '^(HOTEL_NAME|HOTEL_CODE|HOTEL_ID|CHECKIN|CHECKOUT|MAX_PRICE) *=' check_routeinn.py | sed 's/^/  /'
 echo "  SEARCHES:"; sed -n '/^SEARCHES = \[/,/^\]/p' check_routeinn.py | sed 's/^/    /'
 
-line "■ 監視条件④ テニミュ（check_tennimu.py より）"
+line "■ 監視条件③ テニミュ（check_tennimu.py より）"
 grep -E '^(EVENT_NAME|EVENT_URL) *=' check_tennimu.py | sed 's/^/  /'
 echo "  TARGETS:"; sed -n '/^TARGETS = \[/,/^\]/p' check_tennimu.py | sed 's/^/    /'
 
 line "■ 今の状況（実際に取りにいって確認）"
 "$PY" check_toyoko.py 2>&1 | sed 's/^/  /' || echo "  （実行に失敗）"
-echo
-"$PY" check_hearton.py 2>&1 | sed 's/^/  /' || echo "  （実行に失敗）"
 echo
 "$PY" check_routeinn.py 2>&1 | sed 's/^/  /' || echo "  （実行に失敗）"
 echo
@@ -177,19 +170,23 @@ cat <<'EOS'
      指定せず全受付を混ぜると「一般発売が受付中」になっただけで
      「当日引換券が復活した」と誤通知する。
 
- 12. ハートンホテル西梅田について。
-     ・見ているのは Trip.com（OTA）の在庫。ホテル公式の在庫ではない。
-       OTA は割当枠が別なので、Trip.com が満室でも公式に空きがあることがある。
-     ・公式は d-reserve.jp（hotelCode=0000003206、画面 GCER001F00100/GCER001A01）。
-       Vue の SPA で、空室 API のパスを特定できなかった。
-       バンドルにあった /calendar と /GSEA001F01300/GSEA001A01 はどちらも404。
-       リクエストは $contextPath + パス に X-CSRF-TOKEN を付ける形まではわかっている。
-       ブラウザで観測しようとしたが、サイトのJSがブロックされて動かなかった。
-     ・Trip.com の検索URLはパラメータを削ると結果が埋まらなくなる。
-       ユーザーが検索したときのURLをそのまま使い、日付だけ差し替えること。
-     ・1回600KB超。5分間隔で1日約190MB。遮断される可能性がある。
-     ・【無関係だが注意】西梅田は 2027-01-11〜07-31 が改装休館。
-       2027年の日程を頼まれたら、この期間は空かない。2027-08-01 リニューアル予定。
+ 12. 【終了 2026-10-22】ハートンホテル西梅田の監視はユーザーが部屋を確保したため削除した。
+     2026-10-24〜25 の1泊を Trip.com の在庫で見ていた。15回通知が飛んでいる
+     （空き↔満室を何度も往復していた）。
+     復活させるなら git 履歴から check_hearton.py と state_hearton.json を戻す。
+     そのとき必要になることだけ残す:
+       ・見ていたのは Trip.com（OTA）の在庫。ホテル公式の在庫ではない。
+         OTA は割当枠が別で、Trip.com が満室でも公式に空きがあることがある。
+       ・公式は d-reserve.jp（hotelCode=0000003206、画面 GCER001F00100/GCER001A01）。
+         Vue の SPA で空室 API のパスを特定できなかった。
+         /calendar と /GSEA001F01300/GSEA001A01 はどちらも404。
+         リクエストは $contextPath + パス に X-CSRF-TOKEN を付ける形まではわかった。
+       ・Trip.com の検索URLはパラメータを削ると結果が埋まらない。
+         ユーザーが検索したときのURLをそのまま使い、日付だけ差し替えること。
+       ・判定は埋め込みJSONの statusInfo.status（1=買える、100=買えない）。
+       ・1回600KB超。5分間隔で1日約190MB。
+     【無関係だが注意】西梅田は 2027-01-11〜07-31 が改装休館。
+     2027年前半の日程を頼まれたら、この期間は空かない。2027-08-01 リニューアル予定。
 
  13. 【決着 2026-10-16】ローソンチケットは監視できない。再挑戦しなくてよい。
      l-tike.com は bot 対策があり、次のとおり全部弾かれた:
@@ -222,7 +219,6 @@ EOS
 line "■ よく使う操作"
 cat <<EOS
   1回だけ確認          python3 check_toyoko.py
-                       python3 check_hearton.py
                        python3 check_routeinn.py
                        python3 check_tennimu.py
   Actions上で1回試す    gh workflow run "1回だけ実行（手動）" --repo $REPO \\
@@ -244,8 +240,8 @@ EOS
 
 line "■ 新しいセッションでの最初の一言（コピペ用）"
 cat <<EOS
-  空室とチケットの監視（東横イン大阪ドーム前／ハートン西梅田／
-  ルートイン土岐／テニミュ）をやっています。
+  空室とチケットの監視（東横イン大阪ドーム前／ルートイン土岐／テニミュ）を
+  やっています。
   $(pwd) にコードがあります。
   bash handoff.sh を実行して現状を把握してください。
 EOS
