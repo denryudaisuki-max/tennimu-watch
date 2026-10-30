@@ -9,7 +9,7 @@
 #
 set -uo pipefail
 
-INTERVAL="${INTERVAL_SECONDS:-300}"   # 確認間隔（秒）
+INTERVAL="${INTERVAL_SECONDS:-150}"   # 確認間隔（秒）。本番は watch.yml が渡す
 RUN_FOR="${RUN_SECONDS:-19800}"       # ループを回す時間（秒）。既定 5時間30分
 
 # Actions では python、macOS では python3。手元でも同じスクリプトを試せるようにする。
