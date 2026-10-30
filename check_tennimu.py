@@ -43,14 +43,13 @@ from common import JST, http_get, line_push, load_state, save_state
 EVENT_NAME = "ミュージカル『新テニスの王子様』The Final Stage"
 EVENT_URL = "https://eplus.jp/sf/detail/0473460021"
 
-# 復活を待っている公演。増やせばまとめて見る。
-# uketsuke を書くと、その文字を名前に含む受付だけを見る（未指定なら全受付）。
-TARGETS = [
-    # 東京・一般発売（受付の指定なし＝どの受付でも買えるようになったら通知）
+# ページに出ている公演・受付を全部見る。個別の指定は不要。
+# 公演日を過ぎたものは自動で見送る。
+#
+# ただし下記は特に待っている公演なので、通知で目立たせ、先頭に並べる。
+# さらに、まだ公演日前なのにページから消えた場合は異常として警告を出す。
+HIGHLIGHT = [
     {"date": "2026/11/15", "time": "17:30"},
-    # 大阪 SkyシアターMBS の土日公演（当日引換券）は 2026-10-31 に監視終了。
-    # 2026/10/2 18:00 は公演終了により削除（2026-10-15）。
-    # 公演日を過ぎた対象は自動で見送るので、消し忘れても失敗にはならない。
 ]
 
 # この文字列が受付ステータスにあれば「買える」とみなす。
@@ -59,20 +58,6 @@ BUYABLE = ("受付中",)
 
 STATE_PATH = Path(__file__).with_name("state_tennimu.json")
 PARSE_FAIL_ALERT_AT = 3
-
-
-def label_of(target: dict) -> str:
-    if target.get("uketsuke"):
-        return f"{target['date']} {target['time']} [{target['uketsuke']}]"
-    return f"{target['date']} {target['time']}"
-
-
-def matching_uketsuke(perf: dict, target: dict) -> list[dict]:
-    """その対象が見たい受付だけを返す。uketsuke 未指定なら全受付。"""
-    want = target.get("uketsuke")
-    if not want:
-        return perf["uketsuke"]
-    return [u for u in perf["uketsuke"] if want in u["name"]]
 
 
 def strip_tags(s: str) -> str:
@@ -117,7 +102,7 @@ def parse_performances(page: str) -> list[dict]:
             {
                 "date": f"{y}/{mo}/{d}",
                 "time": tm.group(1),
-                "venue": vn.group(1).strip() if vn else "",
+                "venue": strip_tags(vn.group(1)) if vn else "",
                 "region": strip_tags(rg.group(1)) if rg else "",
                 "uketsuke": uketsuke,
             }
@@ -139,18 +124,14 @@ def parse_performances(page: str) -> list[dict]:
     return list(merged.values())
 
 
-def target_date(target: dict) -> date:
-    y, mo, d = (int(x) for x in target["date"].split("/"))
+def perf_date(perf: dict) -> date:
+    y, mo, d = (int(x) for x in perf["date"].split("/"))
     return date(y, mo, d)
 
 
-def find_target(performances: list[dict], target: dict) -> dict | None:
-    want = target_date(target)
-    for p in performances:
-        y, mo, d = (int(x) for x in p["date"].split("/"))
-        if date(y, mo, d) == want and p["time"] == target["time"]:
-            return p
-    return None
+def target_date(target: dict) -> date:
+    y, mo, d = (int(x) for x in target["date"].split("/"))
+    return date(y, mo, d)
 
 
 def record_failure(state: dict, reason: str) -> int:
@@ -191,70 +172,85 @@ def main() -> int:
 
     new_state: dict[str, bool] = {}
     found: list[dict] = []
-    missing: list[str] = []
     today = datetime.now(JST).date()
+    seen_highlight: set[tuple[str, str]] = set()
+    shown = 0
 
-    for target in TARGETS:
-        label = label_of(target)
-
-        # 公演日を過ぎた対象は、ページから消えるのが当たり前なので失敗にしない。
-        # ここを失敗扱いにしていたため、10/2 公演の終了後に監視が11日間止まった。
-        if target_date(target) < today:
-            print(f"      {label} は公演日を過ぎたので見ません")
+    for perf in sorted(performances, key=lambda x: (perf_date(x), x["time"])):
+        # 公演日を過ぎたものは、ページから消えるのが当たり前なので何もしない。
+        if perf_date(perf) < today:
             continue
 
-        p = find_target(performances, target)
-        if p is None:
-            # まだ未来の公演が一覧から消えているのは異常。ただしここで抜けると
-            # 他の公演の通知まで止まるので、記録だけして最後にまとめて報告する。
-            missing.append(label)
-            print(f"    ⚠ {label} が一覧に見つかりません")
-            continue
+        key = (perf["date"], perf["time"])
+        hot = key in {(h["date"], h["time"]) for h in HIGHLIGHT}
+        if hot:
+            seen_highlight.add(key)
 
-        targeted = matching_uketsuke(p, target)
-        if not targeted:
-            # 受付そのものが無い。受付は公演前後で消えるのが普通なので失敗にはしない
-            # （失敗にすると公演当日に誤警告が出る）。ただしログには必ず残す。
-            new_state[label] = False
-            print(f"      {label}　該当する受付が今はありません")
-            continue
+        for u in perf["uketsuke"]:
+            if not u["name"]:
+                continue
+            label = f"{perf['date']} {perf['time']} [{u['name']}]"
+            buyable = any(any(b in st for b in BUYABLE) for st in u["statuses"])
+            new_state[label] = buyable
+            if buyable and not (state.get("buyable") or {}).get(label):
+                found.append({"perf": perf, "uketsuke": u, "hot": hot})
 
-        hit = [
-            u
-            for u in targeted
-            if any(any(b in s for b in BUYABLE) for s in u["statuses"])
-        ]
-        buyable = bool(hit)
-        new_state[label] = buyable
-        mark = "★" if buyable else " "
         detail = " / ".join(
-            f"{u['name']}: {'・'.join(u['statuses']) or '状態なし'}" for u in targeted
+            f"{u['name']}: {'・'.join(u['statuses']) or '状態なし'}"
+            for u in perf["uketsuke"] if u["name"]
         )
-        print(f"    {mark} {label}　{p['venue']}　{detail}")
+        buy_any = any(new_state.get(f"{perf['date']} {perf['time']} [{u['name']}]")
+                      for u in perf["uketsuke"] if u["name"])
+        mark = "★" if buy_any else ("◎" if hot else " ")
+        print(f"    {mark} {perf['date']} {perf['time']}　{perf['venue']}　{detail or '受付なし'}")
+        shown += 1
 
-        if buyable and not (state.get("buyable") or {}).get(label):
-            found.append({"label": label, "perf": p, "uketsuke": hit})
+    print(f"  （公演日前の {shown} 公演を監視対象にしています）")
+
+    # 特に待っている公演が、まだ公演日前なのにページから消えていたら異常。
+    missing = [
+        f"{h['date']} {h['time']}"
+        for h in HIGHLIGHT
+        if target_date(h) >= today and (h["date"], h["time"]) not in seen_highlight
+    ]
 
     if found:
-        lines = ["🎫 チケットが復活しました！", "", EVENT_NAME]
+        # 特に待っている公演を先頭に出す。
+        found.sort(key=lambda f: (not f["hot"], f["perf"]["date"], f["perf"]["time"]))
+        hot_hits = [f for f in found if f["hot"]]
+
+        if hot_hits:
+            h = hot_hits[0]["perf"]
+            lines = [
+                "🔔🔔🔔 お待ちかねの公演です 🔔🔔🔔",
+                "",
+                f"★ {h['date']} {h['time']}　{h['venue']}{h['region']}",
+                "　が復活しました！",
+                "",
+                "──────────────",
+            ]
+        else:
+            lines = ["🎫 チケットが復活しました！", ""]
+
+        lines.append(EVENT_NAME)
         for f in found:
-            p = f["perf"]
+            pf, u = f["perf"], f["uketsuke"]
+            head = "★ " if f["hot"] else "・"
             lines += [
                 "",
-                f"{p['date']} {p['time']}　{p['venue']}{p['region']}",
+                f"{head}{pf['date']} {pf['time']}　{pf['venue']}{pf['region']}",
+                f"　{u['name']}　{'・'.join(u['statuses'])}",
             ]
-            for u in f["uketsuke"]:
-                lines.append(f"・{u['name']}　{'・'.join(u['statuses'])}")
         lines += ["", EVENT_URL, "", f"検知 {now}"]
         text = "\n".join(lines)
         print("--- 通知 ---\n" + text)
         line_push(text)
     elif any(new_state.values()):
-        print("  → 買える状態だが前回から変化なし（通知しません）")
+        print("  → 買える受付はあるが前回から変化なし（通知しません）")
     elif new_state:
         print("  → まだ復活していません（通知しません）")
     else:
-        print("  → 見るべき対象がありません（公演日を過ぎた対象のみ）")
+        print("  → 見るべき公演がありません（全て公演日を過ぎています）")
 
     # 取れた分の状態は、欠けた対象があっても必ず保存する。
     # 保存しないと、次回に同じ復活をもう一度通知してしまう。
