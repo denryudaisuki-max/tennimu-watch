@@ -1,0 +1,87 @@
+name: 通知テスト（テニミュ）
+
+# LINE のトークンは GitHub Secrets にしかないため、通知の確認はここで行う。
+# 使い捨ての状態ファイルを使うので、いま受付中のものがあれば必ず通知が飛ぶ。
+# 本番の状態ファイルには触らないため、戻す作業は要らない。
+# 監視ループとは concurrency グループが別なので、走らせたまま試せる。
+
+on:
+  workflow_dispatch:
+    inputs:
+      simulate_highlight:
+        description: "11/15(日)17:30 が復活した想定でも送る（目立つ通知の見え方を確認）"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: notify-test
+  cancel-in-progress: true
+
+permissions:
+  contents: read # テストなので state は書き戻さない
+
+jobs:
+  notify-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 通知を1通送る
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          SIMULATE: ${{ inputs.simulate_highlight }}
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+
+          import check_tennimu as c
+
+          simulate = os.environ.get("SIMULATE") == "true"
+
+          # 11/15 が復活した状況を作る（目立つ通知の見え方を確認するため）
+          real_parse = c.parse_performances
+
+          def parse_with_simulation(page):
+              perfs = real_parse(page)
+              if simulate:
+                  for p in perfs:
+                      if (p["date"], p["time"]) == ("2026/11/15", "17:30"):
+                          for u in p["uketsuke"]:
+                              if u["name"] == "先着一般発売":
+                                  u["statuses"] = ["受付中"]
+              return perfs
+
+          c.parse_performances = parse_with_simulation
+
+          # 使い捨ての状態。前回値が無い＝受付中のものは必ず「変化した」と判定される。
+          c.STATE_PATH = pathlib.Path("state_notify_test.json")
+          c.STATE_PATH.unlink(missing_ok=True)
+
+          # 本物の復活と見間違えないよう、必ず印を付ける
+          real_push = c.line_push
+
+          def push_with_test_mark(text):
+              mark = "【通知テスト】これは動作確認です。実際の復活ではありません。"
+              if simulate:
+                  mark += "\n※11/15 の行は、見え方を確認するための作り物です。"
+              real_push(mark + "\n\n" + text)
+
+          c.line_push = push_with_test_mark
+
+          print(f"[テスト] 11/15 の復活を模擬する: {simulate}")
+          raise SystemExit(c.main())
+          PY
+
+      - name: 結果の見かた
+        if: always()
+        run: |
+          echo "「--- 通知 ---」と [line] sent が出ていれば LINE に届いています。"
+          echo "「まだ復活していません」で終わった場合は、いま受付中のものが"
+          echo "1件も無かったということです。本番の監視には一切影響しません。"
