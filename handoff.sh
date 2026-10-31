@@ -12,9 +12,14 @@ line() { printf '\n\033[1m%s\033[0m\n' "$1"; printf '%.0s─' {1..70}; echo; }
 
 line "■ これは何か"
 cat <<'EOS'
-チケットの復活を2分30秒ごとに監視し、条件を満たしたら LINE に通知する仕組み。
+ホテルの空室とチケットの復活を2分30秒ごとに監視し、条件を満たしたら LINE に通知する仕組み。
 GitHub Actions 上で動いているので、Mac は閉じていてよい。
-いま監視しているのはテニミュ The Final Stage の1件だけ。
+いま監視しているのは2件（それぞれ独立。片方が落ちても他方は動く）:
+
+  ① 東横INN広島駅前大橋南  2026-11-28(土)→11-29(日) の1泊
+     空室が出たら通知（金額・喫煙・部屋タイプ不問、1名1室）。
+
+  ② テニミュ The Final Stage
   ページに出ている全公演を見る。公演を個別に書く必要はない。
   どれかの受付が「予定枚数終了→受付中」に変わったら通知する。
   受付の種類も問わない（一般発売・当日引換券・キャンセル待ちなど全部）。
@@ -36,13 +41,19 @@ else
   echo "  作業ツリーはクリーン"
 fi
 
-line "■ 監視条件（check_tennimu.py より）"
+line "■ 監視条件① 東横イン（check_toyoko.py より）"
+grep -E '^(HOTEL_CODE|HOTEL_NAME|SMOKING|MAX_PRICE) *=' check_toyoko.py | sed 's/^/  /'
+echo "  STAYS:"; sed -n '/^STAYS = \[/,/^\]/p' check_toyoko.py | sed 's/^/    /'
+
+line "■ 監視条件② テニミュ（check_tennimu.py より）"
 grep -E '^(EVENT_NAME|EVENT_URL|BUYABLE) *=' check_tennimu.py | sed 's/^/  /'
 echo "  対象: ページに出ている全公演（公演日を過ぎたものは自動で除外）"
 echo "  HIGHLIGHT（通知を目立たせる公演）:"
 sed -n '/^HIGHLIGHT = \[/,/^\]/p' check_tennimu.py | sed 's/^/    /'
 
 line "■ 今の状況（実際に取りにいって確認）"
+"$PY" check_toyoko.py 2>&1 | sed 's/^/  /' || echo "  （実行に失敗）"
+echo
 "$PY" check_tennimu.py 2>&1 | sed 's/^/  /' || echo "  （実行に失敗）"
 echo
 echo "  ※ここで state_*.json が更新される。通知は飛ばない（条件を満たしたときのみ）"
@@ -62,8 +73,11 @@ cat <<'EOS'
    1. 【終了した監視】すべてユーザーの指示で削除済み。復活させるなら git 履歴から
      該当ファイルを戻す。そのとき必要になる知識だけ残す。
 
-     ・東横イン（check_hotel.py 札幌 → check_toyoko.py 大阪ドーム前）
+     ・東横イン（check_hotel.py 札幌 → check_toyoko.py 大阪ドーム前 → 広島）
        2026-10-15 に札幌を削除、同16日に大阪ドーム前を追加、同31日に削除。
+       同日さらに広島駅前大橋南（00224）で復活させた。いまは稼働中。
+       ホテルを変えるときは HOTEL_CODE と HOTEL_NAME と STAYS を書き換えるだけ。
+       コードは検索URLの hotel= か /search/detail/xxxxx/ から取れる。
        tRPC の JSON API hotels.availabilities.prices を叩く（認証不要）。
        lowestPrice は「1泊あたり」ではなく滞在合計。実測で確定済み。
          札幌駅北口 10/17〜 1泊 ¥15,700 / 2泊 ¥28,400 / 3泊 ¥41,100
@@ -208,7 +222,8 @@ EOS
 
 line "■ よく使う操作"
 cat <<EOS
-  1回だけ確認          python3 check_tennimu.py
+  1回だけ確認          python3 check_toyoko.py
+                       python3 check_tennimu.py
   Actions上で1回試す    gh workflow run "1回だけ実行（手動）" --repo $REPO \\
                          -f script=check_tennimu.py -f notify=false
                        疎通確認用。「手元では取れるが GitHub からは弾かれる」を
@@ -222,7 +237,7 @@ EOS
 
 line "■ 新しいセッションでの最初の一言（コピペ用）"
 cat <<EOS
-  テニミュ 11/15 公演のチケット監視をやっています。
+  東横イン広島の空室監視と、テニミュ 11/15 公演のチケット監視をやっています。
   $(pwd) にコードがあります。
   bash handoff.sh を実行して現状を把握してください。
 EOS
