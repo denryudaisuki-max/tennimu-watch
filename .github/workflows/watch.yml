@@ -32,6 +32,6 @@ jobs:
       - name: 監視ループ
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-          INTERVAL_SECONDS: "75" # 75秒ごとに確認（2026-11-06 に2分30秒から変更）
+          INTERVAL_SECONDS: "30" # 30秒ごとに確認（2026-11-07 に75秒から変更）
           RUN_SECONDS: "19800" # 5時間30分走り続ける
         run: bash watch_loop.sh
