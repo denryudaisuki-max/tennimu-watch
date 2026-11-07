@@ -1,0 +1,54 @@
+name: 確認間隔のテスト（手動）
+
+# 監視ループを「短時間だけ」Actions 上で走らせて、設定した間隔で本当に回るかを実測する。
+# 本番ループ（watch.yml）とは concurrency グループが別なので、止めずに使える。
+# state は書き戻さない（permissions が read なので push できない）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      interval:
+        description: "確認間隔（秒）"
+        required: true
+        default: "30"
+      duration:
+        description: "テストを走らせる秒数（最大600）"
+        required: true
+        default: "180"
+
+concurrency:
+  group: interval-test
+  cancel-in-progress: true
+
+permissions:
+  contents: read # 確認用。state は書き戻さない
+
+jobs:
+  interval-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: ループを短時間だけ回す
+        env:
+          # 入力は run: に直接展開せず環境変数を経由する（スクリプト注入を防ぐ）。
+          IV: ${{ inputs.interval }}
+          DUR: ${{ inputs.duration }}
+          # LINE のトークンは渡さない。common.py は未設定なら送信せず本文を出すだけ。
+        run: |
+          set -u
+          if ! [[ "$IV" =~ ^[0-9]+$ ]] || (( IV < 5 || IV > 600 )); then
+            echo "interval は 5〜600 の数字で指定してください: $IV" >&2
+            exit 1
+          fi
+          if ! [[ "$DUR" =~ ^[0-9]+$ ]] || (( DUR < 10 || DUR > 600 )); then
+            echo "duration は 10〜600 の数字で指定してください: $DUR" >&2
+            exit 1
+          fi
+          echo "間隔 ${IV} 秒で ${DUR} 秒間テストします（想定 $(( DUR / IV + 1 )) 回前後）"
+          INTERVAL_SECONDS="$IV" RUN_SECONDS="$DUR" bash watch_loop.sh
