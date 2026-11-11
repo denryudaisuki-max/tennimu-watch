@@ -1,16 +1,20 @@
 name: 空室監視
 
+# GitHub の cron は大幅に間引かれる（実測: */5 に対して発火率7%、中央値59分・
+# 最大208分の空白）。cron を後続ループの起動役にすると、5時間半のあいだに
+# 一度も発火しない日があり、実測で100〜169分の監視の穴が繰り返し発生した。
+#
+# そこで「1回のワークフロー実行の中に、5.5時間のジョブを needs で直列につなぐ」
+# 形にする。GitHub の制限は 1ジョブ6時間 / 1実行35日 / 256ジョブなので、
+# 5.5時間 × 18本 = 約99時間を1回の起動でカバーできる。
+# ジョブの切り替わりはランナーの起動時間（数十秒）だけで済み、cron にも
+# PAT にも依存しない。cron は万一チェーンが死んだときの保険として残す。
 on:
-  # GitHub の cron は大幅に間引かれる（実測7%）ため、これは「確認のきっかけ」ではなく
-  # 「ループが途切れたときに再開させるためのトリガー」として使う。実際の確認間隔は
-  # watch_loop.sh の中のタイマーが決める。
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/30 * * * *" # 保険。チェーンが生きている間は待機中として保持される
   workflow_dispatch: # 手動で起動し直す用
 
-# 走っているループが1本だけになるようにする。
-# ループ中に届いた起動要求は「待機中」として1件だけ保持され、
-# ループが終わった瞬間に次のループが始まる（これで切れ目なく続く）。
+# 走っているチェーンが1本だけになるようにする。
 concurrency:
   group: ticket-watch
   cancel-in-progress: false
@@ -19,7 +23,330 @@ permissions:
   contents: write # state を書き戻すため
 
 jobs:
-  check:
+  w01:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w02:
+    needs: w01
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w03:
+    needs: w02
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w04:
+    needs: w03
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w05:
+    needs: w04
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w06:
+    needs: w05
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w07:
+    needs: w06
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w08:
+    needs: w07
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w09:
+    needs: w08
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w10:
+    needs: w09
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w11:
+    needs: w10
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w12:
+    needs: w11
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w13:
+    needs: w12
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w14:
+    needs: w13
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w15:
+    needs: w14
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w16:
+    needs: w15
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w17:
+    needs: w16
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
+    runs-on: ubuntu-latest
+    timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 監視ループ
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          INTERVAL_SECONDS: "10" # 10秒ごとに確認（2026-11-09 に30秒から変更）
+          RUN_SECONDS: "19800" # 5時間30分走り続ける
+        run: bash watch_loop.sh
+
+  w18:
+    needs: w17
+    if: ${{ !cancelled() }} # 前のジョブが失敗してもチェーンを止めない
     runs-on: ubuntu-latest
     timeout-minutes: 350 # ジョブ上限6時間に対して余裕をみる
     steps:
