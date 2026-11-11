@@ -1,0 +1,48 @@
+name: ジョブ直列つなぎのテスト（手動）
+
+# watch.yml を「5.5時間のジョブ × N本の直列」に変える前に、
+# ジョブ間の空白が何秒になるかを実測するためのテスト。
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: chain-test
+  cancel-in-progress: true
+
+permissions:
+  contents: read # 確認用。state は書き戻さない
+
+jobs:
+  c1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: INTERVAL_SECONDS=10 RUN_SECONDS=40 bash watch_loop.sh
+
+  c2:
+    needs: c1
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: INTERVAL_SECONDS=10 RUN_SECONDS=40 bash watch_loop.sh
+
+  c3:
+    needs: c2
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: INTERVAL_SECONDS=10 RUN_SECONDS=40 bash watch_loop.sh
