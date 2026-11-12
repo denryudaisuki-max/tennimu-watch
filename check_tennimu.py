@@ -137,6 +137,9 @@ def target_date(target: dict) -> date:
 def record_failure(state: dict, reason: str) -> int:
     fails = state.get("parse_failures", 0) + 1
     state["parse_failures"] = fails
+    # 障害が始まった時刻を覚えておき、復旧通知で「何分止まっていたか」を出す。
+    if fails == 1:
+        state["failing_since"] = datetime.now(JST).isoformat(timespec="seconds")
     save_state(STATE_PATH, state)
     msg = (
         f"⚠️ テニミュ監視がデータを取得できませんでした（{fails}回連続）\n"
@@ -259,8 +262,41 @@ def main() -> int:
     if missing:
         return record_failure(state, "対象公演が見つかりません: " + ", ".join(missing))
 
+    # 障害から復旧したら「直りました」を一度だけ送る。
+    # ⚠️ を出した障害（PARSE_FAIL_ALERT_AT 回以上）だけが対象。1〜2回で直った
+    # ゆらぎまで知らせると、通知が意味を失うため。
+    prev_fails = state.get("parse_failures", 0)
+    since = state.get("failing_since")
+
     state["parse_failures"] = 0
+    state.pop("failing_since", None)
+    # 通知より先に保存する。送信に失敗しても復旧通知を繰り返さないため。
     save_state(STATE_PATH, state)
+
+    if prev_fails >= PARSE_FAIL_ALERT_AT:
+        span = ""
+        if since:
+            try:
+                started = datetime.fromisoformat(since)
+                minutes = int((datetime.now(JST) - started).total_seconds() // 60)
+                length = "1分未満" if minutes < 1 else f"約{minutes}分間"
+                span = (
+                    f"止まっていたのは {started.strftime('%H:%M')} から{length}です。\n"
+                )
+            except ValueError:
+                pass
+        msg = (
+            "✅ テニミュ監視が復旧しました\n"
+            f"{prev_fails}回連続で取得に失敗していましたが、また読めるようになりました。\n"
+            f"{span}"
+            f"監視はそのまま続いています。\n{EVENT_URL}"
+        )
+        print(msg)
+        try:
+            line_push(msg)
+        except RuntimeError as e:
+            print(f"[warn] 復旧通知を送れませんでした: {e}", file=sys.stderr)
+
     return 0
 
 
