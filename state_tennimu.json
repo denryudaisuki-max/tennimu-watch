@@ -1,4 +1,5 @@
 {
-  "parse_failures": 0,
-  "buyable": {}
+  "parse_failures": 1,
+  "buyable": {},
+  "failing_since": "2026-11-17T00:00:22+09:00"
 }
